@@ -15,9 +15,6 @@ func ClassifyField(state *store.State, f *store.Field) error {
 	if f == nil {
 		return ErrFieldRequired
 	}
-	if err := detectMark(state, f.ID); err != nil {
-		return err
-	}
 	result := map[string]any{
 		"field_id": f.ID,
 		"name":     f.Name,
@@ -25,10 +22,13 @@ func ClassifyField(state *store.State, f *store.Field) error {
 		"at":       time.Now().UTC().Format(time.RFC3339),
 	}
 	// Durably record the classification before flipping the field state.
+	// If this fails, the field must stay pending so downstream masking does
+	// not treat it as classified with an empty category.
 	if err := store.SaveJSON(filepath.Join(state.Root(), "classifications", f.ID+".json"), result); err != nil {
 		return err
 	}
-	return nil
+	// Only mark the field as classified once the result is durably persisted.
+	return detectMark(state, f.ID)
 }
 
 // Reclassify updates a field's category and stores the new result durably.
