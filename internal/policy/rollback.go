@@ -19,19 +19,23 @@ func Rollback(state *store.State, id string) (*store.Policy, error) {
 	if p.Status != store.PolicyActive {
 		return nil, ErrState
 	}
-	p.Status = store.PolicyRolledBack
-	if err := state.PutPolicy(p); err != nil {
-		return nil, err
-	}
-	if err := quota.Release(state, p.TenantID, quotaReserved(state, p)); err != nil {
-		return nil, err
-	}
+	// Durably persist the rollback record first. It is the commit point of the
+	// rollback: while it is not on disk the policy stays active, so a failed
+	// write frees no quota and leaves the rollback retryable. Only after the
+	// record is durable do we flip the status and release quota.
 	record := map[string]any{
 		"policy_id": p.ID,
 		"version":   p.Version,
 		"rolled_back_at": time.Now().UTC().Format(time.RFC3339),
 	}
 	if err := store.SaveJSON(filepath.Join(state.Root(), "rollbacks", p.ID+".json"), record); err != nil {
+		return nil, err
+	}
+	p.Status = store.PolicyRolledBack
+	if err := state.PutPolicy(p); err != nil {
+		return nil, err
+	}
+	if err := quota.Release(state, p.TenantID, quotaReserved(state, p)); err != nil {
 		return nil, err
 	}
 	return p, nil
