@@ -15,12 +15,13 @@ func Apply(state *store.State, jobID, rowID, category, value string) (*store.Mas
 	if !ok {
 		return nil, ErrNotFound
 	}
-	p, err := policy.Get(state, j.PolicyID)
+	// Apply only the rules from the active policy's durable snapshot, so
+	// masking never runs against uncommitted edits, save failures, or draft
+	// rules. Mirrors mask.Batch, which already uses this path.
+	rules, err := policy.SnapshotForExecution(state, j.PolicyID)
 	if err != nil {
 		return nil, err
 	}
-	_ = p
-	rules := state.RulesForPolicy(p.ID)
 	buf := NewBuffer()
 	output := buf.Process(rules, category, value)
 	res := &store.MaskResult{
