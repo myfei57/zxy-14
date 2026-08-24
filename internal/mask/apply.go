@@ -25,7 +25,12 @@ func Apply(state *store.State, jobID, rowID, category, value string) (*store.Mas
 	if err := policy.Commit(state, p); err != nil {
 		return nil, err
 	}
-	rules := state.RulesForPolicy(p.ID)
+	// Resolve rules from the published snapshot, not the live rule set, so a
+	// job always runs against the verified snapshot captured at publish time.
+	rules, err := policy.SnapshotForExecution(state, j.PolicyID)
+	if err != nil {
+		return nil, err
+	}
 	buf := NewBuffer()
 	output := buf.Process(rules, category, value)
 	res := &store.MaskResult{
